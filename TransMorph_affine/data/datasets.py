@@ -5,7 +5,35 @@ from .data_utils import pkload
 import matplotlib.pyplot as plt
 
 import numpy as np
+import nibabel as nib
 
+
+class NiftiDataset(Dataset):
+    def __init__(self, data_path, transforms):
+        self.paths = data_path
+        self.transforms = transforms
+    
+    def one_hot(self, img, C):
+        out = np.zeros((C, img.shape[1], img.shape[2], img.shape[3]))
+        for i in range(C):
+            out[i,...] = img == i
+        return out
+    
+    def __getitem__(self, index):
+        path = self.paths[index]
+        x = nib.load(path).get_fdata()
+        y = pkload('D:/DATA/Duke/XCAT/phan.pkl')  # TODO figure out what this is, I think it's a dummy object
+        y = np.flip(y, 1)
+        x, y = x[None, ...], y[None, ...]
+        x,y = self.transforms([x, y])
+        x = np.ascontiguousarray(x)
+        x = torch.from_numpy(x)
+        y = np.ascontiguousarray(y)
+        y = torch.from_numpy(y)
+        return x, y
+    
+    def __len__(self):
+        return len(self.paths)
 
 class CTDataset(Dataset):
     def __init__(self, data_path, transforms):
