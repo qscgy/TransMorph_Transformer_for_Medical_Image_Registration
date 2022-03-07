@@ -1,6 +1,7 @@
 from torch.utils.tensorboard import SummaryWriter
 import os, utils, glob, losses
 import sys
+import pickle
 from torch.utils.data import DataLoader
 from data import datasets, trans
 import numpy as np
@@ -28,8 +29,13 @@ class Logger(object):
 
 def main():
     batch_size = 1
-    train_dir = 'D:/DATA/JHUBrain/Train/'
-    val_dir = 'D:/DATA/JHUBrain/Val/'
+    with open('affine_splits.pkl','rb') as f:
+        splits = pickle.load(f)
+    train_paths1 = splits['train_list1']
+    train_paths2 = splits['train_list2']
+    val_paths1 = splits['val_list1']
+    val_paths2 = splits['val_list2']
+
     weights = [1, 0.02]
     save_dir = 'TransMorphBSpline_mse_{}_diffusion_{}/'.format(weights[0], weights[1])
     if not os.path.exists('experiments/'+save_dir):
@@ -52,7 +58,7 @@ def main():
     If continue from previous training
     '''
     if cont_training:
-        epoch_start = 335
+        epoch_start = 1  # was 335
         model_dir = 'experiments/'+save_dir
         updated_lr = round(lr * np.power(1 - (epoch_start) / max_epoch,0.9),8)
         best_model = torch.load(model_dir + natsorted(os.listdir(model_dir))[0])['state_dict']
@@ -63,16 +69,19 @@ def main():
     '''
     Initialize training
     '''
-    train_composed = transforms.Compose([trans.RandomFlip(0),
+    train_composed = transforms.Compose([trans.MinMax_norm(),
+                                         trans.Resize_img(config.img_size),
+                                         trans.RandomFlip(0),
                                          trans.NumpyType((np.float32, np.float32)),
                                          ])
 
-    val_composed = transforms.Compose([trans.Seg_norm(), #rearrange segmentation label to 1 to 46
-                                       trans.NumpyType((np.float32, np.int16)),
+    val_composed = transforms.Compose([trans.MinMax_norm(),
+                                        trans.Resize_img(config.img_size),
+                                       trans.NumpyType((np.float32, np.float32)),
                                         ])
 
-    train_set = datasets.JHUBrainDataset(glob.glob(train_dir + '*.pkl'), transforms=train_composed)
-    val_set = datasets.JHUBrainInferDataset(glob.glob(val_dir + '*.pkl'), transforms=val_composed)
+    train_set = datasets.NiftiPairedDataset(train_paths1, train_paths2, transforms=train_composed)
+    val_set = datasets.NiftiPairedDataset(val_paths1, val_paths2, transforms=val_composed)
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
     val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=True)
 
@@ -89,6 +98,8 @@ def main():
         '''
         loss_all = utils.AverageMeter()
         idx = 0
+        print(len(train_loader))
+        print(len(val_loader))
         for data in train_loader:
             idx += 1
             model.train()
@@ -143,8 +154,11 @@ def main():
                 data = [t.cuda() for t in data]
                 x = data[0]
                 y = data[1]
-                x_seg = data[2]
-                y_seg = data[3]
+                # x_seg = data[2]
+                # y_seg = data[3]
+                x_seg = torch.zeros_like(data[0])
+                y_seg = torch.zeros_like(data[1])
+                
                 grid_img = mk_grid_img(8, 1, config.img_size)
                 output = model((x, y))
                 with torch.cuda.device(GPU_iden):
@@ -212,7 +226,7 @@ if __name__ == '__main__':
     '''
     GPU configuration
     '''
-    GPU_iden = 1
+    GPU_iden = 0
     GPU_num = torch.cuda.device_count()
     print('Number of GPU: ' + str(GPU_num))
     for GPU_idx in range(GPU_num):

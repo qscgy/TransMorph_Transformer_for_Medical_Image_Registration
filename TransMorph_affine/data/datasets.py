@@ -22,8 +22,8 @@ class NiftiDataset(Dataset):
     def __getitem__(self, index):
         path = self.paths[index]
         x = nib.load(path).get_fdata()
-        y = pkload('D:/DATA/Duke/XCAT/phan.pkl')  # TODO figure out what this is, I think it's a dummy object
-        y = np.flip(y, 1)
+        y = nib.load('/playpen/aomic-id1000/derivatives/derivatives/fmriprep/sub-0001/anat/sub-0001_space-MNI152NLin2009cAsym_desc-preproc_T1w.nii.gz').get_fdata()  # TODO figure out what this is, I think it's a dummy object
+        # y = np.flip(y, 1)
         x, y = x[None, ...], y[None, ...]
         x,y = self.transforms([x, y])
         x = np.ascontiguousarray(x)

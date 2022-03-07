@@ -3,9 +3,38 @@ import torch, sys
 from torch.utils.data import Dataset
 from .data_utils import pkload
 import matplotlib.pyplot as plt
+import nibabel as nib
 
 import numpy as np
 
+class NiftiPairedDataset(Dataset):
+    def __init__(self, data_path1, data_path2, transforms):
+        self.paths1 = data_path1
+        self.paths2 = data_path2
+        self.transforms = transforms
+    
+    def one_hot(self, img, C):
+        out = np.zeros((C, img.shape[1], img.shape[2], img.shape[3]))
+        for i in range(C):
+            out[i,...] = img == i
+        return out
+    
+    def __getitem__(self, index):
+        path1 = self.paths1[index]
+        path2 = self.paths2[index]
+        x = nib.load(path1).get_fdata()
+        y = nib.load(path2).get_fdata()
+        # y = np.flip(y, 1)
+        x, y = x[None, ...], y[None, ...]
+        x,y = self.transforms([x, y])
+        x = np.ascontiguousarray(x)
+        x = torch.from_numpy(x)
+        y = np.ascontiguousarray(y)
+        y = torch.from_numpy(y)
+        return x, y
+    
+    def __len__(self):
+        return len(self.paths1)
 
 class JHUBrainDataset(Dataset):
     def __init__(self, data_path, transforms):

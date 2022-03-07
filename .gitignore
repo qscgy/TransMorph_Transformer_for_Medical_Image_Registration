@@ -1,0 +1,6 @@
+TransMesh_Affine/
+TransMorph_Affine/
+TransMorph_Affine/*
+logs/
+*.pyc
+experiments/

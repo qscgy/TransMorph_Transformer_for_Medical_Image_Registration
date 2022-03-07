@@ -1,14 +1,15 @@
 from torch.utils.tensorboard import SummaryWriter
 import os, utils, glob, losses
 import sys
+import pickle
 from torch.utils.data import DataLoader
 from data import datasets, trans
 import numpy as np
-import torch, TransMorh_affine
+import torch, TransMorph_affine
 from torchvision import transforms
 from torch import optim
 import matplotlib.pyplot as plt
-from TransMorh_affine import CONFIGS as CONFIGS_TM
+from TransMorph_affine import CONFIGS as CONFIGS_TM
 from natsort import natsorted
 
 class Logger(object):
@@ -28,8 +29,10 @@ def MSE_torch(x, y):
 
 def main():
     batch_size = 1
-    train_dir = 'D:/DATA/Duke/All_adult/'
-    val_dir = 'D:/DATA/Duke/Adult/fold_1/Test/'
+    with open('affine_splits.pkl','rb') as f:
+        splits = pickle.load(f)
+    train_paths = splits['train_list']
+    val_paths = splits['val_list']
     save_dir = 'TransMorph_Affine/'
     if not os.path.exists('experiments/'+save_dir):
         os.makedirs('experiments/'+save_dir)
@@ -45,13 +48,13 @@ def main():
     Initialize model
     '''
     config = CONFIGS_TM['TransMorph-Affine']
-    model = TransMorh_affine.TransMorphAffine(config)
+    model = TransMorph_affine.TransMorphAffine(config)
     model.cuda()
 
     '''
     Initialize affine transformation function
     '''
-    AffInfer = TransMorh_affine.ApplyAffine()
+    AffInfer = TransMorph_affine.ApplyAffine()
     AffInfer.cuda()
 
     '''
@@ -69,18 +72,20 @@ def main():
     '''
     Initialize training
     '''
-    train_composed = transforms.Compose([trans.Pad3DIfNeeded((180, 180, 180)),
+    train_composed = transforms.Compose([trans.ToTensor(),
+                                         trans.Pad3DIfNeeded((180, 180, 180)),
                                          trans.CenterCropBySize((160, 160, 160)),
                                          trans.NumpyType((np.float32, np.float32)),
                                          ])
 
-    val_composed = transforms.Compose([trans.Pad3DIfNeeded((180, 180, 180)),
+    val_composed = transforms.Compose([trans.ToTensor(),
+                                         trans.Pad3DIfNeeded((180, 180, 180)),
                                          trans.CenterCropBySize((160, 160, 160)),
                                          trans.NumpyType((np.float32, np.float32)),
                                          ])
 
-    train_set = datasets.CTDataset(glob.glob(train_dir + '*.pkl'), transforms=train_composed)
-    val_set = datasets.CTDataset(glob.glob(val_dir + '*.pkl'), transforms=val_composed)
+    train_set = datasets.NiftiDataset(train_paths, transforms=train_composed)
+    val_set = datasets.NiftiDataset(val_paths, transforms=val_composed)
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
     val_loader = DataLoader(val_set, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, drop_last=True)
     # Optimizers
@@ -180,7 +185,7 @@ if __name__ == '__main__':
     '''
     GPU configuration
     '''
-    GPU_iden = 1
+    GPU_iden = 0
     GPU_num = torch.cuda.device_count()
     print('Number of GPU: ' + str(GPU_num))
     for GPU_idx in range(GPU_num):

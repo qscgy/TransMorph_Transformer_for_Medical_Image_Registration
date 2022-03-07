@@ -24,7 +24,7 @@ import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, trunc_normal_, to_3tuple
 import torch.nn.functional as nnf
 import numpy as np
-import configs_affine as configs
+import config_affine as configs
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
