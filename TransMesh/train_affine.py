@@ -99,7 +99,7 @@ def main():
             x = data[0]
             y = data[1]
             # x_in = torch.cat((x, y), dim=1)
-            mat, inv_mat, trans = model(x)
+            mat, inv_mat, trans = model(x, y)
             loss, _ = aff_loss(y, x, mat, trans)
             loss.backward()
             optimizer.step()

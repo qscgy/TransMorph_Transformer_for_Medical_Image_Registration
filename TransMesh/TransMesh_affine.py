@@ -676,9 +676,9 @@ class MeshSwinTransformer(nn.Module):
         else:
             raise TypeError('pretrained must be a str or None')
 
-    def forward(self, x):
+    def forward(self, x, xf):
         """Forward function."""
-        x = self.patch_embed(x)
+        x = self.patch_embed(x, xf)
 
         Wh, Ww, Wt = x.size(2), x.size(3), x.size(4)
         if self.ape:
@@ -776,9 +776,9 @@ class TransMeshAffine(nn.Module):
         self.relu_shear = nn.ReLU(inplace=True)
         self.affine_trans = MeshAffineTransformer()
 
-    def forward(self, x):
+    def forward(self, x, xf):
         source = x[0]
-        out = self.transformer(x)
+        out = self.transformer(x, xf)
         x5 = torch.flatten(out[-1], start_dim=1)
         aff = self.aff_head(x5)
         aff = self.relu_aff(aff)

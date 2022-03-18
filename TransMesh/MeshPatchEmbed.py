@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import matplotlib.pyplot as plt
 import open3d
 import time
 from pytorch3d.io import load_obj, save_obj
@@ -30,10 +31,14 @@ class MeshPatchEmbed(nn.Module):
         # 1x1x1 convolution in order to apply a matrix to each patch vector
         self.proj = nn.Conv3d(self.in_chans, self.embed_dim, kernel_size=1, stride=1)
     
-    def forward(self, x):
+    def forward(self, x, xf):
         y = self.partition._forward_open3d(x).cuda()
         y = torch.permute(y, (3, 0, 1, 2))
         y = torch.unsqueeze(y, 0)
+        yf = self.partition._forward_open3d(xf).cuda()
+        yf = torch.permute(y, (3, 0, 1, 2))
+        yf = torch.unsqueeze(y, 0)
+        y = torch.cat((y, yf), 0)
         y = self.proj(y)
         return y
 
@@ -130,6 +135,47 @@ class MeshPatchPartition(nn.Module):
         token = torch.flatten(token)
         return token
 
+class AugmentedPointEmbed(nn.Module):
+    def __init__(self, step, max_dim, in_chans, embed_dim):
+        super().__init__()
+        self.step = step
+        self.max_dim = max_dim
+        self.in_chans = in_chans
+        self.embed_dim = embed_dim
+        self.pad = nn.ConstantPad1d((0,1), 0)
+    
+    def forward(self, x):
+        '''
+        x is a Tensor of dimension (N,6)
+        '''
+        start = time.time()
+        sort_x, inds_x, buckets_x = self.bin_points(x, 0)
+        sort_y, inds_y, buckets_y = self.bin_points(x, 1)
+        sort_z, inds_z, buckets_z = self.bin_points(x, 2)
+
+        # add another column that indexes the cube, base (number of cubes on an axis)
+        xt = self.pad(x)
+        xt[inds_x,-1] = buckets_x
+        xt[inds_y,-1] += (buckets_y * (2/self.step))
+        xt[inds_z,-1] += (buckets_z * (2/self.step)**2)
+        
+        for i in range(16):
+            for j in range(16):
+                for k in range(16):
+                    bincount = torch.count_nonzero(xt[:,-1]==i+16*j+256*k)
+                    print(bincount)
+
+        end = time.time()
+        print(end-start)
+        print(xt[10000:10010])
+        return xt[:,:-1]
+    
+    def bin_points(self, x, col):
+        sort, inds = torch.sort(x[:,col], stable=True)
+        buckets = sort*(1/self.step) + int(1/self.step)
+        buckets = torch.clamp(buckets, max=int(2/self.step)-1)
+        return sort, inds, torch.floor(buckets)
+
 def load_mesh(trg_obj):
     device = 'cuda'
     # We read the target 3D model using load_obj
@@ -157,15 +203,28 @@ if __name__=='__main__':
     # lis = three_d_list(2, (2,3,4))
     # print(lis[1][1][1])
 
-    embed = MeshPatchEmbed(1/8, 128, 128*9, 512)
+    # embed = MeshPatchEmbed(1/8, 128, 128*9, 512)
+
+    embed = AugmentedPointEmbed(1/8, 128, 128*6, 512)
+
     embed.cuda()
     mesh = load_mesh('/playpen/meshes-better/sim_082.obj')
+    pts = mesh.verts_packed()
+    center = pts.mean(0)
+    pts = pts - center
+    scale = max(pts.abs().max(0)[0])
+    pts = pts / scale
     # tokens = embed.forward(mesh)
     # print(tokens.shape)
 
     # mesh = open3d.io.read_triangle_mesh('/playpen/RNNSLAM/window-size-1/031/mesh/test_norm_ave3_031.obj')
-    tokens = embed(mesh)
+    
+    tokens = embed(pts)
     print(tokens.shape)
+
+    # tokens = tokens.cpu().numpy()
+    # plt.plot(tokens[:,-1])
+    # plt.show()
 
     # mesh = open3d.io.read_triangle_mesh('/playpen/RNNSLAM/window-size-1/031/mesh/test_norm_ave3_031.obj')
     # tokens = embed.forward(mesh)
