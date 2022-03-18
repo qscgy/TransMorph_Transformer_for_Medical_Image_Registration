@@ -146,7 +146,18 @@ class AugmentedPointEmbed(nn.Module):
     
     def forward(self, x):
         '''
-        x is a Tensor of dimension (N,6)
+        Tokenizes an augmented point cloud into a dictionary.
+        Arguments:
+            x : Tensor of dimension (N,6)
+        Returns:
+            bins : a dictionary with int labels as keys and mx6 Tensors
+            as values. The labels are decimal representations of a number
+            which is 3 hex digits in base 16, each of which corresponds to the
+            index of a bin in X,Y, or Z. The mx6 tensors are the points in that
+            bin. No linear projection is used as the dimension (6) is small enough
+            that it would not add much information. m is less than or equal
+            to self.max_dim. If a label is not a key, then its corresponding
+            bin is empty.
         '''
         start = time.time()
         sort_x, inds_x, buckets_x = self.bin_points(x, 0)
@@ -158,17 +169,23 @@ class AugmentedPointEmbed(nn.Module):
         xt[inds_x,-1] = buckets_x
         xt[inds_y,-1] += (buckets_y * (2/self.step))
         xt[inds_z,-1] += (buckets_z * (2/self.step)**2)
+        bins = {}
         
         for i in range(16):
             for j in range(16):
                 for k in range(16):
-                    bincount = torch.count_nonzero(xt[:,-1]==i+16*j+256*k)
-                    print(bincount)
+                    label = i+16*j+256*k
+                    bincount = torch.count_nonzero(xt[:,-1]==label)
+                    if bincount==0:
+                        continue
+                    points = xt[torch.nonzero(xt[:,-1]==label), :-1].reshape(-1,x.shape[-1])
+                    _, pinds = torch.sort(torch.norm(points[:,3:6],dim=1), stable=True)
+                    points = points[pinds]
+                    bins[label] = points[-self.max_dim:]
 
         end = time.time()
         print(end-start)
-        print(xt[10000:10010])
-        return xt[:,:-1]
+        return bins
     
     def bin_points(self, x, col):
         sort, inds = torch.sort(x[:,col], stable=True)
@@ -205,7 +222,7 @@ if __name__=='__main__':
 
     # embed = MeshPatchEmbed(1/8, 128, 128*9, 512)
 
-    embed = AugmentedPointEmbed(1/8, 128, 128*6, 512)
+    embed = AugmentedPointEmbed(1/8, 512, 6, 256)
 
     embed.cuda()
     mesh = load_mesh('/playpen/meshes-better/sim_082.obj')
@@ -214,13 +231,14 @@ if __name__=='__main__':
     pts = pts - center
     scale = max(pts.abs().max(0)[0])
     pts = pts / scale
+    pts = torch.cat([pts, mesh.verts_normals_packed()], 1)
     # tokens = embed.forward(mesh)
     # print(tokens.shape)
 
     # mesh = open3d.io.read_triangle_mesh('/playpen/RNNSLAM/window-size-1/031/mesh/test_norm_ave3_031.obj')
     
     tokens = embed(pts)
-    print(tokens.shape)
+    print(tokens.keys())
 
     # tokens = tokens.cpu().numpy()
     # plt.plot(tokens[:,-1])
